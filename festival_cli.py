@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Lineup2Playlist - Interaktive CLI-Oberflaeche
-=============================================
+Lineup2Playlist - interactive CLI
+=================================
 
-Menuegefuehrte Oberflaeche fuer festival_playlist.py: Line-Up-Datei waehlen,
-Ziel/Modus/Optionen einstellen, Vorschau ansehen und die Playlist bauen -
-ohne sich Kommandozeilen-Flags merken zu muessen.
+Menu-driven front end for festival_playlist.py: choose a line-up file, set
+target/mode/options, preview and build the playlist - without having to
+remember command-line flags.
 
 Start:
-    python festival_cli.py            # interaktives Menue (Terminal)
-    python festival_cli.py lineup.txt # Line-Up direkt vorwaehlen
-    python festival_cli.py -w         # grafische Web-Oberflaeche (Port 666)
-    python festival_cli.py -w 6660    # Web-Oberflaeche auf anderem Port
+    python festival_cli.py            # interactive menu (terminal)
+    python festival_cli.py lineup.txt # preselect a line-up
+    python festival_cli.py -w         # graphical web interface (port 666)
+    python festival_cli.py -w 6660    # web interface on a different port
 
-Die Einstellungen werden in festival_cli_config.json gemerkt.
-Fuer den Skript-/Automatisierungs-Einsatz bleibt festival_playlist.py
-mit seinen Flags (--target, --lineup, ...) unveraendert nutzbar.
+Settings are remembered in festival_cli_config.json.
+For scripting/automation, festival_playlist.py with its flags
+(--target, --lineup, ...) remains usable unchanged.
 """
 
 import glob
@@ -25,13 +25,13 @@ import sys
 
 import festival_playlist as fp
 
-# Am Skriptverzeichnis verankert, damit die Config unabhaengig vom
-# Arbeitsverzeichnis immer dieselbe ist (wie TASK_FILE/SESSION_FILE im Kern).
+# Anchored to the script directory so the config is always the same,
+# independent of the working directory (like TASK_FILE/SESSION_FILE in core).
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "festival_cli_config.json")
 
 # ---------------------------------------------------------------------------
-# ANSI-FARBEN (automatisch aus, wenn kein Terminal oder NO_COLOR gesetzt)
+# ANSI COLORS (auto-off when not a terminal or NO_COLOR is set)
 # ---------------------------------------------------------------------------
 
 _USE_COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
@@ -48,13 +48,13 @@ def red(t):    return _c("31", t)
 
 
 # ---------------------------------------------------------------------------
-# KONFIGURATION (persistent)
+# CONFIGURATION (persistent)
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
     "lineup": None,
     "target": "tidal",           # tidal | plex
-    "catalog": False,            # False = Top-Tracks, True = Katalog
+    "catalog": False,            # False = top tracks, True = catalog
     "top": fp.TOP_N,
     "name": "Festival - Best Of",
     "dry_run": False,
@@ -72,7 +72,7 @@ def load_config():
         cfg.update({k: v for k, v in saved.items() if k in DEFAULTS})
     except (OSError, ValueError):
         pass
-    # Umgebungsvariablen schlagen die gespeicherte Config
+    # Environment variables override the saved config
     for key, env in (("plex_baseurl", "PLEX_BASEURL"),
                      ("plex_token", "PLEX_TOKEN"),
                      ("plex_library", "PLEX_LIBRARY")):
@@ -85,21 +85,21 @@ def load_config():
 
 def save_config(cfg):
     try:
-        # 0600: Config enthaelt ggf. den Plex-Token im Klartext
+        # 0600: the config may hold the Plex token in clear text
         fd = os.open(CONFIG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
         os.chmod(CONFIG_FILE, 0o600)
     except OSError as e:
-        print(yellow(f"  ! Konfiguration nicht gespeichert: {e}"))
+        print(yellow(f"  ! Could not save configuration: {e}"))
 
 
 # ---------------------------------------------------------------------------
-# LINE-UP-DATEIEN FINDEN / LADEN
+# FIND / LOAD LINE-UP FILES
 # ---------------------------------------------------------------------------
 
 def is_lineup_file(path):
-    """True, wenn die TXT einen '### Line-Up'/'### Bands'-Header enthaelt."""
+    """True if the .txt contains a '### Line-Up'/'### Bands' header."""
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -114,7 +114,7 @@ def is_lineup_file(path):
 
 
 def find_lineup_files():
-    """Sucht Line-Up-TXTs im Projektverzeichnis."""
+    """Look for line-up .txt files in the project folder."""
     base = os.path.dirname(os.path.abspath(__file__))
     hits = []
     for p in sorted(glob.glob(os.path.join(base, "*.txt"))):
@@ -126,7 +126,7 @@ def find_lineup_files():
 
 
 def lineup_stats(path):
-    """(genres, bands) laden, ohne bei Fehlern das Programm zu beenden."""
+    """Load (genres, bands) without exiting the program on error."""
     try:
         return fp.parse_lineup(path, verbose=False)
     except SystemExit as e:
@@ -135,11 +135,11 @@ def lineup_stats(path):
 
 
 # ---------------------------------------------------------------------------
-# EINGABE-HELFER
+# INPUT HELPERS
 # ---------------------------------------------------------------------------
 
 def ask(prompt, default=None):
-    """input() mit Default und sauberem Abbruch bei Strg-C/Strg-D."""
+    """input() with a default and a clean abort on Ctrl-C/Ctrl-D."""
     suffix = f" [{default}]" if default not in (None, "") else ""
     try:
         val = input(f"  {prompt}{suffix}: ").strip()
@@ -160,31 +160,31 @@ def ask_int(prompt, default, lo=1, hi=100):
                 return n
         except ValueError:
             pass
-        print(yellow(f"  Bitte Zahl zwischen {lo} und {hi} eingeben."))
+        print(yellow(f"  Please enter a number between {lo} and {hi}."))
 
 
 def pause():
     try:
-        input(dim("\n  <Enter> fuer zurueck zum Menue "))
+        input(dim("\n  <Enter> to return to the menu "))
     except (EOFError, KeyboardInterrupt):
         print()
 
 
 # ---------------------------------------------------------------------------
-# MENUE-AKTIONEN
+# MENU ACTIONS
 # ---------------------------------------------------------------------------
 
 def choose_lineup(cfg):
     files = find_lineup_files()
     print()
     if files:
-        print(bold("  Gefundene Line-Up-Dateien:"))
+        print(bold("  Line-up files found:"))
         for i, p in enumerate(files, 1):
             genres, bands = lineup_stats(p)
-            info = f"{len(bands)} Bands, {len(genres)} Genres" if bands else "unlesbar"
+            info = f"{len(bands)} bands, {len(genres)} genres" if bands else "unreadable"
             print(f"   [{i}] {os.path.basename(p)}  {dim('(' + info + ')')}")
-        print(f"   [p] anderen Pfad eingeben")
-        sel = ask("Auswahl", "1")
+        print(f"   [p] enter a different path")
+        sel = ask("Choice", "1")
         if sel is None:
             return
         if sel.lower() != "p":
@@ -196,24 +196,24 @@ def choose_lineup(cfg):
                     return
             except ValueError:
                 pass
-            print(yellow("  Ungueltige Auswahl."))
+            print(yellow("  Invalid choice."))
             return
     else:
-        print(yellow("  Keine Line-Up-Dateien im Projektverzeichnis gefunden."))
+        print(yellow("  No line-up files found in the project folder."))
 
-    path = ask("Pfad zur Line-Up-TXT")
+    path = ask("Path to the line-up .txt")
     if not path:
         return
     path = os.path.expanduser(path)
     if not os.path.isfile(path):
-        print(red(f"  Keine Datei: {path}"))
+        print(red(f"  Not a file: {path}"))
         return
     cfg["lineup"] = path
     _suggest_name(cfg)
 
 
 def _suggest_name(cfg):
-    """Playlist-Namen aus dem Dateinamen vorschlagen, solange der Default steht."""
+    """Suggest a playlist name from the file name while the default is set."""
     if cfg["name"] == DEFAULTS["name"]:
         stem = os.path.splitext(os.path.basename(cfg["lineup"]))[0]
         cfg["name"] = f"{stem.replace('_', ' ').replace('-', ' ').title()} - Best Of"
@@ -221,15 +221,15 @@ def _suggest_name(cfg):
 
 def preview_lineup(cfg):
     if not cfg["lineup"]:
-        print(yellow("\n  Bitte zuerst eine Line-Up-Datei waehlen."))
+        print(yellow("\n  Please choose a line-up file first."))
         return
     genres, bands = lineup_stats(cfg["lineup"])
     if not bands:
         return
     print()
     print(bold(f"  {os.path.basename(cfg['lineup'])}"))
-    print(f"  Genre-Prioritaet: {cyan(', '.join(genres) if genres else '-')}")
-    print(f"  {len(bands)} Bands:")
+    print(f"  Genre priority: {cyan(', '.join(genres) if genres else '-')}")
+    print(f"  {len(bands)} bands:")
     width = max(len(b) for b in bands) + 3
     cols = max(1, 78 // width)
     for row in range(0, len(bands), cols):
@@ -240,29 +240,29 @@ def preview_lineup(cfg):
 
 def edit_plex(cfg):
     print()
-    print(bold("  Plex-Einstellungen") + dim("  (auch per Umgebungsvariablen "
-          "PLEX_BASEURL/PLEX_TOKEN/PLEX_LIBRARY setzbar)"))
-    url = ask("Server-URL", cfg["plex_baseurl"])
+    print(bold("  Plex settings") + dim("  (can also be set via env vars "
+          "PLEX_BASEURL/PLEX_TOKEN/PLEX_LIBRARY)"))
+    url = ask("Server URL", cfg["plex_baseurl"])
     if url is None:
         return
     token = ask("Token", cfg["plex_token"])
     if token is None:
         return
-    lib = ask("Musik-Bibliothek", cfg["plex_library"])
+    lib = ask("Music library", cfg["plex_library"])
     if lib is None:
         return
     cfg.update(plex_baseurl=url, plex_token=token, plex_library=lib)
 
 
 def plex_ready(cfg):
-    return ("DEIN_PLEX_TOKEN" not in cfg["plex_token"]
+    return ("YOUR_PLEX_TOKEN" not in cfg["plex_token"]
             and "192.168.x.x" not in cfg["plex_baseurl"])
 
 
 def show_tasks():
     print()
     if not os.path.exists(fp.TASK_FILE):
-        print(dim("  Noch keine Aufgabenliste vorhanden (erst nach einem Lauf)."))
+        print(dim("  No task list yet (created after the first run)."))
     else:
         with open(fp.TASK_FILE, encoding="utf-8") as f:
             for line in f:
@@ -272,36 +272,36 @@ def show_tasks():
 
 def run_generation(cfg):
     if not cfg["lineup"]:
-        print(yellow("\n  Bitte zuerst eine Line-Up-Datei waehlen."))
+        print(yellow("\n  Please choose a line-up file first."))
         return
-    # Plex-Zugangsdaten und -Paket nur pruefen, wenn tatsaechlich gegen Plex
-    # gebaut wird (im Dry-Run wird build_plex_playlist nie aufgerufen).
+    # Only check Plex credentials and package when actually building against
+    # Plex (in a dry run build_plex_playlist is never called).
     if cfg["target"] == "plex" and not cfg["dry_run"]:
         if not plex_ready(cfg):
-            print(yellow("\n  Plex ist als Ziel gewaehlt, aber Server-URL/Token "
-                         "sind noch Platzhalter.\n  Bitte zuerst die Plex-"
-                         "Einstellungen ausfuellen (Menuepunkt 8)."))
+            print(yellow("\n  Plex is selected as the target, but the server "
+                         "URL/token are still placeholders.\n  Please fill in "
+                         "the Plex settings first (menu item 8)."))
             return
         try:
             import plexapi  # noqa: F401
         except ImportError:
-            print(yellow("\n  Das Paket 'plexapi' ist nicht installiert: "
+            print(yellow("\n  The 'plexapi' package is not installed: "
                          "pip install plexapi"))
             return
 
     print()
-    print(bold("  Los geht's:"))
-    print(f"    Line-Up   {os.path.basename(cfg['lineup'])}")
-    print(f"    Ziel      {cfg['target']}")
-    print(f"    Modus     {'Katalog (alle Alben)' if cfg['catalog'] else 'Top-Tracks'}")
-    print(f"    Playlist  {cfg['name']}" + (dim("  (Dry-Run: wird NICHT angelegt)")
+    print(bold("  Ready to go:"))
+    print(f"    Line-up   {os.path.basename(cfg['lineup'])}")
+    print(f"    Target    {cfg['target']}")
+    print(f"    Mode      {'Catalog (all albums)' if cfg['catalog'] else 'Top tracks'}")
+    print(f"    Playlist  {cfg['name']}" + (dim("  (dry run: NOT created)")
                                             if cfg["dry_run"] else ""))
-    ok = ask("Starten? (j/n)", "j")
-    if ok is None or ok.lower() not in ("j", "ja", "y", "yes"):
-        print(dim("  Abgebrochen."))
+    ok = ask("Start? (y/n)", "y")
+    if ok is None or ok.lower() not in ("y", "yes"):
+        print(dim("  Cancelled."))
         return
 
-    # Plex-Konfiguration ans Kernmodul durchreichen
+    # Pass the Plex config through to the core module
     fp.PLEX_BASEURL = cfg["plex_baseurl"]
     fp.PLEX_TOKEN = cfg["plex_token"]
     fp.PLEX_LIBRARY = cfg["plex_library"]
@@ -316,40 +316,40 @@ def run_generation(cfg):
                                cfg["catalog"], tasks)
 
         if cfg["dry_run"]:
-            print(dim("Dry-Run: keine Playlist angelegt."))
+            print(dim("Dry run: no playlist created."))
         elif not collected:
-            print(yellow("Keine Tracks gesammelt - keine Playlist angelegt."))
+            print(yellow("No tracks collected - no playlist created."))
         elif cfg["target"] == "tidal":
             fp.build_tidal_playlist(session, collected, cfg["name"], cfg["catalog"])
         else:
             fp.build_plex_playlist(collected, cfg["name"], tasks)
     except SystemExit as e:
-        print(red(f"\n  Abbruch: {e}"))
+        print(red(f"\n  Aborted: {e}"))
     except KeyboardInterrupt:
-        print(red("\n  Vom Benutzer abgebrochen."))
+        print(red("\n  Cancelled by user."))
     except Exception as e:
-        print(red(f"\n  Fehler: {type(e).__name__}: {e}"))
+        print(red(f"\n  Error: {type(e).__name__}: {e}"))
     finally:
-        # Aufgabenliste IMMER schreiben, sobald etwas erfasst wurde - auch
-        # wenn der Playlist-Bau fehlschlaegt ODER collect() selbst abbricht
+        # Always write the task list once anything was collected - even if
+        # building the playlist fails OR collect() itself aborts
         if collected is not None or tasks.has_tasks():
             tasks.write(fp.TASK_FILE)
             if tasks.has_tasks():
-                print(yellow(f"  {tasks.count()} offene manuelle Aufgabe(n) - "
-                             "Menuepunkt [a] zeigt sie an."))
+                print(yellow(f"  {tasks.count()} open manual task(s) - "
+                             "menu item [a] shows them."))
             else:
-                print(green("  Alles automatisch erledigt - keine offenen Aufgaben."))
+                print(green("  All done automatically - no open tasks."))
     pause()
 
 
 # ---------------------------------------------------------------------------
-# HAUPTMENUE
+# MAIN MENU
 # ---------------------------------------------------------------------------
 
 def print_menu(cfg):
     print()
     print(cyan("  ============================================="))
-    print(cyan("   LINEUP2PLAYLIST") + dim("  (Tidal/Plex)"))
+    print(cyan("   LINEUP2PLAYLIST") + dim("  (TIDAL/Plex)"))
     print(cyan("  ============================================="))
 
     if cfg["lineup"]:
@@ -359,39 +359,39 @@ def print_menu(cfg):
         except SystemExit:
             pass
         info = (f"{os.path.basename(cfg['lineup'])}  "
-                + dim(f"({len(bands)} Bands, {len(genres)} Genres)")
-                if bands else red(os.path.basename(cfg["lineup"]) + "  (unlesbar!)"))
+                + dim(f"({len(bands)} bands, {len(genres)} genres)")
+                if bands else red(os.path.basename(cfg["lineup"]) + "  (unreadable!)"))
     else:
-        info = yellow("noch keine gewaehlt")
+        info = yellow("none selected yet")
 
-    target = "Tidal-Playlist" if cfg["target"] == "tidal" else "Plex-Matching"
+    target = "TIDAL playlist" if cfg["target"] == "tidal" else "Plex matching"
     if cfg["target"] == "plex" and not plex_ready(cfg):
-        target += "  " + yellow("(! Zugangsdaten fehlen)")
-    mode = "Katalog (alle Alben)" if cfg["catalog"] else "Top-Tracks (Tidal-Ranking)"
+        target += "  " + yellow("(! credentials missing)")
+    mode = "Catalog (all albums)" if cfg["catalog"] else "Top tracks (TIDAL ranking)"
 
-    print(bold("   Konfiguration"))
-    print(f"     Line-Up     {info}")
-    print(f"     Ziel        {target}")
-    print(f"     Modus       {mode}")
-    print(f"     Songs/Band  {cfg['top']}")
+    print(bold("   Configuration"))
+    print(f"     Line-up     {info}")
+    print(f"     Target      {target}")
+    print(f"     Mode        {mode}")
+    print(f"     Songs/band  {cfg['top']}")
     print(f"     Playlist    {cfg['name']}")
-    print(f"     Dry-Run     {green('an') if cfg['dry_run'] else dim('aus')}")
+    print(f"     Dry run     {green('on') if cfg['dry_run'] else dim('off')}")
     print()
-    print(bold("   [1]") + " Line-Up-Datei waehlen")
-    print(bold("   [2]") + " Ziel wechseln (Tidal <-> Plex)")
-    print(bold("   [3]") + " Sammel-Modus wechseln (Top-Tracks <-> Katalog)")
-    print(bold("   [4]") + " Songs je Band aendern")
-    print(bold("   [5]") + " Playlist-Name aendern")
-    print(bold("   [6]") + " Dry-Run umschalten")
-    print(bold("   [7]") + " Line-Up-Vorschau")
-    print(bold("   [8]") + " Plex-Einstellungen")
-    print(green("   [s]") + " Playlist bauen (Start)")
-    print(bold("   [a]") + " Manuelle Aufgaben anzeigen")
-    print(bold("   [q]") + " Beenden")
+    print(bold("   [1]") + " Choose line-up file")
+    print(bold("   [2]") + " Switch target (TIDAL <-> Plex)")
+    print(bold("   [3]") + " Switch collection mode (top tracks <-> catalog)")
+    print(bold("   [4]") + " Change songs per band")
+    print(bold("   [5]") + " Change playlist name")
+    print(bold("   [6]") + " Toggle dry run")
+    print(bold("   [7]") + " Line-up preview")
+    print(bold("   [8]") + " Plex settings")
+    print(green("   [s]") + " Build playlist (start)")
+    print(bold("   [a]") + " Show manual tasks")
+    print(bold("   [q]") + " Quit")
 
 
 def _maybe_launch_web(argv):
-    """-w [PORT] -> Web-Oberflaeche starten statt Terminal-Menue."""
+    """-w [PORT] -> launch the web interface instead of the terminal menu."""
     if "-w" not in argv and "--web" not in argv:
         return False
     flag = "-w" if "-w" in argv else "--web"
@@ -410,16 +410,16 @@ def main():
 
     cfg = load_config()
 
-    # Optionales Argument: Line-Up-Datei direkt vorwaehlen
+    # Optional argument: preselect a line-up file
     if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
         cand = os.path.expanduser(sys.argv[1])
         if os.path.exists(cand):
             cfg["lineup"] = cand
             _suggest_name(cfg)
         else:
-            print(red(f"Line-Up-Datei nicht gefunden: {cand}"))
+            print(red(f"Line-up file not found: {cand}"))
 
-    # Falls noch keine gewaehlt: einzige gefundene Datei automatisch nehmen
+    # If none selected yet: auto-pick the only file found
     if not cfg["lineup"]:
         files = find_lineup_files()
         if len(files) == 1:
@@ -428,10 +428,10 @@ def main():
 
     while True:
         print_menu(cfg)
-        choice = ask("Auswahl")
+        choice = ask("Choice")
         if choice is None or choice.lower() == "q":
             save_config(cfg)
-            print(dim("  Einstellungen gespeichert. Bis zum naechsten Festival!"))
+            print(dim("  Settings saved. See you at the next festival!"))
             return
 
         c = choice.lower()
@@ -442,11 +442,11 @@ def main():
         elif c == "3":
             cfg["catalog"] = not cfg["catalog"]
         elif c == "4":
-            n = ask_int("Songs je Band", cfg["top"], 1, 50)
+            n = ask_int("Songs per band", cfg["top"], 1, 50)
             if n is not None:
                 cfg["top"] = n
         elif c == "5":
-            name = ask("Playlist-Name", cfg["name"])
+            name = ask("Playlist name", cfg["name"])
             if name:
                 cfg["name"] = name
         elif c == "6":
@@ -463,7 +463,7 @@ def main():
         elif c == "":
             continue
         else:
-            print(yellow("  Unbekannte Auswahl."))
+            print(yellow("  Unknown choice."))
 
 
 if __name__ == "__main__":

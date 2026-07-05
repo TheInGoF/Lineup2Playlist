@@ -156,7 +156,7 @@ class TestParseLineup:
         assert genres == ["punk"]
         assert bands == ["Band A", "Band B"]
         out = capsys.readouterr().out
-        assert "unbekanntem Header '### Anreise'" in out
+        assert "unknown header '### Anreise'" in out
 
     def test_verzeichnis_statt_datei_meldet_sauber(self, tmp_path):
         with pytest.raises(SystemExit):
@@ -173,7 +173,7 @@ class TestTaskLog:
         assert not t.has_tasks()
         out = tmp_path / "tasks.txt"
         t.write(str(out))
-        assert "keine offenen Aufgaben" in out.read_text(encoding="utf-8")
+        assert "no open tasks" in out.read_text(encoding="utf-8")
 
     def test_mit_aufgaben(self, tmp_path):
         t = fp.TaskLog()
@@ -427,7 +427,7 @@ class TestCollect:
         collected = fp.collect(s, ["Kaputte Band"], [], limit=2,
                                catalog=False, tasks=tasks, pause=0)
         assert collected == []
-        assert tasks.errors == ["Kaputte Band (Tracks: boom)"]
+        assert tasks.errors == ["Kaputte Band (tracks: boom)"]
 
     def test_such_fehler_bricht_lauf_nicht_ab(self):
         s = mock.Mock()
@@ -441,7 +441,7 @@ class TestCollect:
         collected = fp.collect(s, ["Limitierte Band", "Gute Band"], [],
                                limit=2, catalog=False, tasks=tasks, pause=0)
         assert len(collected) == 1  # zweite Band trotzdem gesammelt
-        assert tasks.errors == ["Limitierte Band (Suche: 429 Too Many Requests)"]
+        assert tasks.errors == ["Limitierte Band (search: 429 Too Many Requests)"]
 
     def test_fallback_landet_in_uncertain(self):
         a = make_artist("A", genre=None, top_tracks=[make_track("Hit", 90)])
@@ -685,22 +685,22 @@ class TestTidalLogin:
         monkeypatch.setattr(fp.tidalapi, "Session", mock.Mock(return_value=fake))
         with pytest.raises(SystemExit) as exc:
             fp.tidal_login()
-        assert "Login" in str(exc.value)
+        assert "login" in str(exc.value)
 
 
 class TestExpiryHelfer:
     def test_iso_string_wird_datetime(self):
-        assert fp._expiry_laden("2099-01-01T12:30:00") == datetime(2099, 1, 1, 12, 30)
+        assert fp._expiry_load("2099-01-01T12:30:00") == datetime(2099, 1, 1, 12, 30)
 
     def test_unsinn_wird_none(self):
-        assert fp._expiry_laden("kein datum") is None
+        assert fp._expiry_load("kein datum") is None
 
     def test_none_bleibt_none(self):
-        assert fp._expiry_laden(None) is None
-        assert fp._expiry_speichern(None) is None
+        assert fp._expiry_load(None) is None
+        assert fp._expiry_store(None) is None
 
     def test_datetime_wird_iso(self):
-        assert fp._expiry_speichern(datetime(2099, 1, 1)) == "2099-01-01T00:00:00"
+        assert fp._expiry_store(datetime(2099, 1, 1)) == "2099-01-01T00:00:00"
 
 
 class TestTracksCatalogGetter:
@@ -721,5 +721,5 @@ class TestMainPlexVorpruefung:
         monkeypatch.setattr(fp, "tidal_login", login)
         with pytest.raises(SystemExit) as exc:
             fp.main()
-        assert "Platzhalter" in str(exc.value)
+        assert "placeholders" in str(exc.value)
         login.assert_not_called()  # Abbruch VOR Login und Sammelphase

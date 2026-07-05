@@ -17,10 +17,10 @@ venv/
 # AI assistant configs
 .claude/
 
-# Secrets & personal runtime data (Tidal OAuth tokens, saved settings, task list)
+# Secrets & personal runtime data (TIDAL OAuth tokens, saved settings, task list)
 tidal_session.json
 festival_cli_config.json
-manuelle_aufgaben.txt
+manual_tasks.txt
 
 # Personal line-up files stay private — only the shipped example is tracked.
 # (Drop your own "<festival>.txt" here; it will be ignored automatically.)

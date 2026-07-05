@@ -50,6 +50,6 @@ verbliebenen kleineren Punkte (Fundstellen aus dem Multi-Agent-Review).
   wie oft der neue Top-Hit-Fallback greift (Aufgabenliste ansehen).
 - [ ] `.gitignore` anlegen, falls das Projekt ein Git-Repo wird
   (`.venv/`, `tidal_session.json`, `festival_cli_config.json`,
-  `manuelle_aufgaben.txt`, `__pycache__/`, `.pytest_cache/`).
+  `manual_tasks.txt`, `__pycache__/`, `.pytest_cache/`).
 - [ ] VS-Code-Bug melden (`/bug`): Extension biegt `/workflows` auf
   `/__remote-workflow` um, das lokal nicht funktioniert.

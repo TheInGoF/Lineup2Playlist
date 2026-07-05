@@ -44,7 +44,7 @@ on TIDAL directly, or matched track-by-track against a local Plex library.
 - **Resumable & duplicate-safe:** a re-run reuses the same playlist and only adds
   what's missing, so an interrupted upload just continues.
 - **Nothing is added blindly** — anything ambiguous or unmatched lands in a
-  `manuelle_aufgaben.txt` to-do list for you to check.
+  `manual_tasks.txt` to-do list for you to check.
 - **Standalone:** pure Python standard library for the UI (only `tidalapi` and
   `plexapi` as real dependencies); settings live in a local file, not a cloud account.
 
@@ -130,7 +130,7 @@ Bad Religion
 - Otherwise the genre priority list *would* decide — but note that the TIDAL API
   (`tidalapi` 0.8.x) does not expose genre data on artists/albums, so in practice
   the tool falls back to TIDAL's top hit and flags the band as *"please check"*.
-- Anything it can't resolve or match is written to `manuelle_aufgaben.txt` —
+- Anything it can't resolve or match is written to `manual_tasks.txt` —
   nothing is added blindly.
 
 ## TIDAL login & privacy

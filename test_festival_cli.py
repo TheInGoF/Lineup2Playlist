@@ -151,7 +151,7 @@ class TestPlexReady:
     def test_platzhalter_nicht_bereit(self):
         cfg = dict(fc.DEFAULTS)
         cfg.update(plex_baseurl="http://192.168.x.x:32400",
-                   plex_token="DEIN_PLEX_TOKEN")
+                   plex_token="YOUR_PLEX_TOKEN")
         assert not fc.plex_ready(cfg)
 
     def test_echte_werte_bereit(self):
@@ -200,7 +200,7 @@ class TestMenuFlow:
         feed_inputs(monkeypatch, ["s", "q"])
         fc.main()
         out = capsys.readouterr().out
-        assert "zuerst eine Line-Up-Datei" in out
+        assert "line-up file first" in out
 
     def test_dry_run_lauf_ohne_playlist(self, tmp_config, tmp_path, monkeypatch, capsys):
         lineup = tmp_path / "mini.txt"
@@ -223,11 +223,11 @@ class TestMenuFlow:
         monkeypatch.setattr(fc.fp, "build_tidal_playlist", build)
 
         # Dry-Run an, Start, Bestaetigung, <Enter> nach dem Lauf, beenden
-        feed_inputs(monkeypatch, ["6", "s", "j", "", "q"])
+        feed_inputs(monkeypatch, ["6", "s", "y", "", "q"])
         fc.main()
 
         out = capsys.readouterr().out
-        assert "Dry-Run: keine Playlist angelegt" in out
+        assert "Dry run: no playlist created" in out
         build.assert_not_called()
         assert (tmp_path / "tasks.txt").exists()
 
@@ -255,11 +255,11 @@ class TestRunGeneration:
 
         # Ziel plex + Platzhalter-Creds, aber Dry-Run -> darf NICHT blocken
         cfg = self._minimal_cfg(lineup, target="plex", dry_run=True)
-        feed_inputs(monkeypatch, ["j", ""])  # Start bestaetigen, dann pause
+        feed_inputs(monkeypatch, ["y", ""])  # Start bestaetigen, dann pause
         fc.run_generation(cfg)
 
         out = capsys.readouterr().out
-        assert "Dry-Run: keine Playlist angelegt" in out
+        assert "Dry run: no playlist created" in out
         build_plex.assert_not_called()
 
     def test_task_liste_ueberlebt_build_fehler(self, tmp_path, monkeypatch):
@@ -279,7 +279,7 @@ class TestRunGeneration:
                             mock.Mock(side_effect=RuntimeError("Plex weg")))
 
         cfg = self._minimal_cfg(lineup, target="tidal", dry_run=False)
-        feed_inputs(monkeypatch, ["j", ""])
+        feed_inputs(monkeypatch, ["y", ""])
         fc.run_generation(cfg)
         assert task_file.exists()  # trotz Build-Crash geschrieben
 
@@ -299,7 +299,7 @@ class TestRunGeneration:
         monkeypatch.setattr(fc.fp, "collect", fake_collect)
 
         cfg = self._minimal_cfg(lineup, target="tidal", dry_run=False)
-        feed_inputs(monkeypatch, ["j", ""])
+        feed_inputs(monkeypatch, ["y", ""])
         fc.run_generation(cfg)
         assert task_file.exists()
         assert "Abgebrochene Band" in task_file.read_text(encoding="utf-8")

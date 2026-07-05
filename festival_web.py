@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Lineup2Playlist - Web-Oberflaeche
-=================================
+Lineup2Playlist - web interface
+===============================
 
-Lokale grafische Oberflaeche im Browser, gestartet aus dem Terminal:
+Local graphical interface in the browser, started from the terminal:
 
     python festival_cli.py -w          # http://localhost:666
-    python festival_cli.py -w 6660     # anderer Port
+    python festival_cli.py -w 6660     # different port
 
-Bindet NUR an 127.0.0.1 (kein Zugriff aus dem Netz). Nutzt ausschliesslich
-die Python-Standardbibliothek - keine zusaetzliche Abhaengigkeit.
+Binds ONLY to 127.0.0.1 (no network access). Uses nothing but the Python
+standard library - no extra dependency.
 
-Gleiche Funktionen wie das Terminal-Menue: Line-Up waehlen, Ziel/Modus/
-Optionen einstellen, Vorschau, Start mit Live-Fortschritt (Server-Sent
-Events) inkl. Tidal-Login-Link im Browser, Anzeige der manuellen Aufgaben.
+Same features as the terminal menu: choose a line-up, set target/mode/
+options, preview, start with live progress (Server-Sent Events) including the
+TIDAL login link in the browser, and a view of the manual tasks.
 """
 
 import json
@@ -32,14 +32,14 @@ HOST = "127.0.0.1"
 
 
 # ---------------------------------------------------------------------------
-# LAUF-PROTOKOLL (thread-sicher, fuer SSE-Streaming an den Browser)
+# RUN LOG (thread-safe, for SSE streaming to the browser)
 # ---------------------------------------------------------------------------
 
 class RunLog:
-    """Sammelt Ereignisse eines Laufs und weckt wartende SSE-Verbindungen."""
+    """Collects the events of a run and wakes waiting SSE connections."""
 
     def __init__(self):
-        self.events = []          # Liste {type: log|error|done, text}
+        self.events = []          # list of {type: log|error|done, text}
         self.active = False
         self.cv = threading.Condition()
 
@@ -56,14 +56,14 @@ class RunLog:
 
     def finish(self):
         with self.cv:
-            # Abschluss-Event, damit der Browser den Lauf als beendet erkennt
-            # (Button freigeben, Aufgaben nachladen) und den Stream schliesst.
-            self.events.append({"type": "done", "text": "fertig"})
+            # Completion event so the browser recognizes the run as finished
+            # (re-enable the button, reload tasks) and closes the stream.
+            self.events.append({"type": "done", "text": "done"})
             self.active = False
             self.cv.notify_all()
 
     def snapshot_from(self, idx, timeout=15):
-        """Warte auf neue Ereignisse ab Index idx; liefere (neue, aktiv)."""
+        """Wait for new events from index idx; return (new, active)."""
         with self.cv:
             if idx >= len(self.events) and self.active:
                 self.cv.wait(timeout=timeout)
@@ -71,12 +71,12 @@ class RunLog:
 
 
 RUNLOG = RunLog()
-_run_lock = threading.Lock()   # nur ein Lauf gleichzeitig
+_run_lock = threading.Lock()   # only one run at a time
 
 
 class _StreamToLog:
-    """Ersetzt sys.stdout/stderr waehrend eines Laufs und leitet je Zeile
-    ins RunLog um (mit Spiegelung ins echte Terminal)."""
+    """Replaces sys.stdout/stderr during a run and forwards each line to the
+    RunLog (while mirroring to the real terminal)."""
 
     def __init__(self, runlog, mirror):
         self.runlog = runlog
@@ -106,7 +106,7 @@ class _StreamToLog:
 
 
 def _headless_run(cfg):
-    """Ein kompletter Lauf ohne Terminal-Interaktion (Ausgabe -> RunLog)."""
+    """A complete run without terminal interaction (output -> RunLog)."""
     fp.PLEX_BASEURL = cfg["plex_baseurl"]
     fp.PLEX_TOKEN = cfg["plex_token"]
     fp.PLEX_LIBRARY = cfg["plex_library"]
@@ -119,9 +119,9 @@ def _headless_run(cfg):
         collected = fp.collect(session, bands, genres, cfg["top"],
                                cfg["catalog"], tasks)
         if cfg["dry_run"]:
-            print("Dry-Run: keine Playlist angelegt.")
+            print("Dry run: no playlist created.")
         elif not collected:
-            print("Keine Tracks gesammelt - keine Playlist angelegt.")
+            print("No tracks collected - no playlist created.")
         elif cfg["target"] == "tidal":
             fp.build_tidal_playlist(session, collected, cfg["name"], cfg["catalog"])
         else:
@@ -130,9 +130,9 @@ def _headless_run(cfg):
         if collected is not None or tasks.has_tasks():
             tasks.write(fp.TASK_FILE)
             if tasks.has_tasks():
-                print(f"{tasks.count()} offene manuelle Aufgabe(n) - siehe unten.")
+                print(f"{tasks.count()} open manual task(s) - see below.")
             else:
-                print("Alles automatisch erledigt - keine offenen Aufgaben.")
+                print("All done automatically - no open tasks.")
 
 
 def _run_worker(cfg):
@@ -143,9 +143,9 @@ def _run_worker(cfg):
     try:
         _headless_run(cfg)
     except SystemExit as e:
-        RUNLOG.emit("error", f"Abbruch: {e}")
+        RUNLOG.emit("error", f"Aborted: {e}")
     except Exception as e:
-        RUNLOG.emit("error", f"Fehler: {type(e).__name__}: {e}")
+        RUNLOG.emit("error", f"Error: {type(e).__name__}: {e}")
     finally:
         out.close_line()
         err.close_line()
@@ -154,11 +154,11 @@ def _run_worker(cfg):
 
 
 # ---------------------------------------------------------------------------
-# HELFER
+# HELPERS
 # ---------------------------------------------------------------------------
 
 def _effective_config():
-    """Config laden und um Laufzeit-Infos ergaenzen."""
+    """Load the config and enrich it with runtime info."""
     cfg = fc.load_config()
     files = fc.find_lineup_files()
     if not cfg["lineup"] and len(files) == 1:
@@ -173,21 +173,21 @@ def _lineup_info(path):
     try:
         genres, bands = fp.parse_lineup(path, verbose=False)
     except SystemExit:
-        return {"error": "unlesbar"}
+        return {"error": "unreadable"}
     return {"genres": genres, "bands": bands}
 
 
 # ---------------------------------------------------------------------------
-# HTTP-HANDLER
+# HTTP HANDLER
 # ---------------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FestivalWeb/1.0"
+    server_version = "Lineup2Playlist/1.0"
 
     def log_message(self, *_):
-        pass  # Zugriffe nicht ins (evtl. umgeleitete) stdout spammen
+        pass  # don't spam the (possibly redirected) stdout with requests
 
-    # ---- Antwort-Helfer -------------------------------------------------
+    # ---- response helpers ----------------------------------------------
 
     def _send_json(self, obj, status=200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -214,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return {}
 
-    # ---- Routing --------------------------------------------------------
+    # ---- routing --------------------------------------------------------
 
     def do_GET(self):
         route = urlparse(self.path)
@@ -278,21 +278,21 @@ class Handler(BaseHTTPRequestHandler):
             if key in data:
                 cfg[key] = data[key]
 
-        # Validierung mit sofortigem Feedback (vor der langen Sammelphase)
+        # Validation with immediate feedback (before the long collection phase)
         if not cfg["lineup"] or not os.path.isfile(cfg["lineup"]):
-            return self._send_json({"error": "Keine gueltige Line-Up-Datei gewaehlt."}, 400)
+            return self._send_json({"error": "No valid line-up file selected."}, 400)
         if cfg["target"] == "plex" and not cfg["dry_run"]:
             if not fc.plex_ready(cfg):
                 return self._send_json(
-                    {"error": "Plex-Zugangsdaten fehlen (Server-URL/Token)."}, 400)
+                    {"error": "Plex credentials missing (server URL/token)."}, 400)
             try:
                 import plexapi  # noqa: F401
             except ImportError:
                 return self._send_json(
-                    {"error": "Paket 'plexapi' ist nicht installiert."}, 400)
+                    {"error": "The 'plexapi' package is not installed."}, 400)
 
         if not _run_lock.acquire(blocking=False):
-            return self._send_json({"error": "Es laeuft bereits ein Vorgang."}, 409)
+            return self._send_json({"error": "A run is already in progress."}, 409)
 
         fc.save_config(cfg)
         RUNLOG.start()
@@ -307,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _api_stream(self):
-        """Server-Sent Events: streamt Lauf-Ausgabe live an den Browser."""
+        """Server-Sent Events: streams run output live to the browser."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -323,20 +323,20 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                 self.wfile.flush()
                 if not events:
-                    self.wfile.write(b": ping\n\n")  # Heartbeat
+                    self.wfile.write(b": ping\n\n")  # heartbeat
                     self.wfile.flush()
                 if not active and idx >= len(RUNLOG.events):
                     break
         except (BrokenPipeError, ConnectionResetError):
-            pass  # Browser hat die Verbindung geschlossen
+            pass  # the browser closed the connection
 
 
 # ---------------------------------------------------------------------------
-# SINGLE-PAGE-OBERFLAECHE
+# SINGLE-PAGE INTERFACE
 # ---------------------------------------------------------------------------
 
 PAGE = r"""<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -396,50 +396,50 @@ PAGE = r"""<!doctype html>
 <body>
 <header>
   <h1>Lineup2Playlist</h1>
-  <p>Aus einem Festival-Line-Up automatisch eine Tidal- oder Plex-Playlist.</p>
+  <p>Turn a festival line-up into a ready-to-play TIDAL or Plex playlist.</p>
 </header>
 <main>
   <section class="card">
-    <h2>Line-Up</h2>
-    <label>Datei</label>
+    <h2>Line-up</h2>
+    <label>File</label>
     <select id="lineup"></select>
     <div id="genres" style="margin-top:10px"></div>
   </section>
 
   <section class="card">
-    <h2>Einstellungen</h2>
-    <label>Ziel</label>
+    <h2>Settings</h2>
+    <label>Target</label>
     <div class="seg" id="target">
-      <button data-v="tidal">Tidal-Playlist</button>
-      <button data-v="plex">Plex-Matching</button>
+      <button data-v="tidal">TIDAL playlist</button>
+      <button data-v="plex">Plex matching</button>
     </div>
-    <label>Sammel-Modus</label>
+    <label>Collection mode</label>
     <div class="seg" id="mode">
-      <button data-v="top">Top-Tracks</button>
-      <button data-v="catalog">Katalog (alle Alben)</button>
+      <button data-v="top">Top tracks</button>
+      <button data-v="catalog">Catalog (all albums)</button>
     </div>
     <div class="row" style="margin-top:4px">
       <div style="flex:0 0 120px">
-        <label>Songs/Band</label>
+        <label>Songs/band</label>
         <input type="number" id="top" min="1" max="50">
       </div>
       <div style="flex:1">
-        <label>Playlist-Name</label>
+        <label>Playlist name</label>
         <input type="text" id="name">
       </div>
     </div>
     <div class="check">
       <input type="checkbox" id="dry"><label for="dry" style="margin:0">
-      Dry-Run (nur sammeln, keine Playlist anlegen)</label>
+      Dry run (only collect, don't create a playlist)</label>
     </div>
   </section>
 
   <section class="card wide plexbox" id="plexbox">
-    <h2>Plex-Einstellungen</h2>
+    <h2>Plex settings</h2>
     <div class="row">
-      <div style="flex:1"><label>Server-URL</label>
+      <div style="flex:1"><label>Server URL</label>
         <input type="text" id="plex_baseurl" placeholder="http://192.168.1.10:32400"></div>
-      <div style="flex:1"><label>Musik-Bibliothek</label>
+      <div style="flex:1"><label>Music library</label>
         <input type="text" id="plex_library"></div>
     </div>
     <label>Token</label>
@@ -452,17 +452,17 @@ PAGE = r"""<!doctype html>
   </section>
 
   <section class="card wide">
-    <button class="go" id="run">Playlist bauen</button>
+    <button class="go" id="run">Build playlist</button>
     <div id="status" class="muted" style="margin-top:8px"></div>
   </section>
 
   <section class="card wide">
-    <h2>Live-Fortschritt</h2>
-    <div id="log"><span class="muted">Noch kein Lauf gestartet.</span></div>
+    <h2>Live progress</h2>
+    <div id="log"><span class="muted">No run started yet.</span></div>
   </section>
 
   <section class="card wide">
-    <h2>Manuelle Aufgaben</h2>
+    <h2>Manual tasks</h2>
     <div id="tasks"><span class="muted">-</span></div>
   </section>
 </main>
@@ -512,7 +512,7 @@ async function loadState() {
   sel.innerHTML = '';
   if (!s.lineups.length) {
     const o = document.createElement('option');
-    o.textContent = 'keine Line-Up-Datei gefunden'; o.value = '';
+    o.textContent = 'no line-up file found'; o.value = '';
     sel.appendChild(o);
   }
   s.lineups.forEach(l => {
@@ -555,10 +555,10 @@ async function preview() {
   if (!lineup) { bands.innerHTML = '<span class="muted">-</span>'; return; }
   const r = await (await fetch('/api/preview?lineup=' + encodeURIComponent(lineup))).json();
   if (!r.info || r.info.error) {
-    bands.innerHTML = '<span class="muted">unlesbar</span>'; return;
+    bands.innerHTML = '<span class="muted">unreadable</span>'; return;
   }
   genres.innerHTML = r.info.genres.map(g => '<span class="chip">' + g + '</span>').join('')
-    || '<span class="muted">keine Genre-Prioritaet</span>';
+    || '<span class="muted">no genre priority</span>';
   bands.innerHTML = '';
   r.info.bands.forEach(b => {
     const d = document.createElement('div'); d.textContent = b; bands.appendChild(d);
@@ -579,38 +579,38 @@ function startStream() {
     const ev = JSON.parse(e.data);
     const line = document.createElement('div');
     if (ev.type === 'error') line.className = 'err';
-    else if (/tidal\.com|log in|einloggen/i.test(ev.text)) line.className = 'login';
+    else if (/tidal\.com|log in/i.test(ev.text)) line.className = 'login';
     line.appendChild(linkify(ev.text));
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;
     if (ev.type === 'done') { finishRun(); }
   };
-  es.onerror = () => { /* Reconnect erledigt der Browser; bei Lauf-Ende schliessen wir selbst */ };
+  es.onerror = () => { /* the browser reconnects; we close ourselves at run end */ };
 }
 
 function finishRun() {
   if (es) { es.close(); es = null; }
   $('run').disabled = false;
-  $('status').textContent = 'Fertig.';
+  $('status').textContent = 'Done.';
   loadTasks();
 }
 
 async function run() {
   $('run').disabled = true;
-  $('status').textContent = 'Laeuft ...';
+  $('status').textContent = 'Running ...';
   const r = await fetch('/api/run', {method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(currentConfig())});
   const j = await r.json();
   if (!r.ok) {
-    $('status').textContent = 'Fehler: ' + (j.error || r.status);
+    $('status').textContent = 'Error: ' + (j.error || r.status);
     $('run').disabled = false;
     return;
   }
   startStream();
 }
 
-// --- Verdrahtung ---
+// --- wiring ---
 $('lineup').addEventListener('change', () => { preview(); saveSoon(); });
 ['target', 'mode'].forEach(g => $(g).addEventListener('click', e => {
   if (e.target.dataset.v) {
@@ -632,7 +632,7 @@ loadState();
 
 
 # ---------------------------------------------------------------------------
-# SERVER-START
+# SERVER START
 # ---------------------------------------------------------------------------
 
 def serve(port=DEFAULT_PORT, open_browser=True):
@@ -640,15 +640,15 @@ def serve(port=DEFAULT_PORT, open_browser=True):
     try:
         httpd = ThreadingHTTPServer((HOST, port), Handler)
     except PermissionError:
-        sys.exit(f"Port {port} braucht erhoehte Rechte (privilegierter Port "
-                 f"< 1024).\nEntweder mit 'sudo' starten oder einen hoeheren "
-                 f"Port waehlen, z.B.:  python festival_cli.py -w 6660")
+        sys.exit(f"Port {port} needs elevated privileges (privileged port "
+                 f"< 1024).\nEither start with 'sudo' or pick a higher port, "
+                 f"e.g.:  python festival_cli.py -w 6660")
     except OSError as e:
-        sys.exit(f"Kann Port {port} nicht oeffnen ({e}).\n"
-                 f"Anderer Port:  python festival_cli.py -w 6660")
+        sys.exit(f"Cannot open port {port} ({e}).\n"
+                 f"Different port:  python festival_cli.py -w 6660")
 
-    print(f"Lineup2Playlist - Web-Oberflaeche laeuft auf {url}")
-    print("Beenden mit Strg-C.")
+    print(f"Lineup2Playlist - web interface running at {url}")
+    print("Stop with Ctrl-C.")
     if open_browser:
         try:
             webbrowser.open(url)
@@ -657,7 +657,7 @@ def serve(port=DEFAULT_PORT, open_browser=True):
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nBeendet.")
+        print("\nStopped.")
     finally:
         httpd.server_close()
 

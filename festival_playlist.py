@@ -1,40 +1,39 @@
 #!/usr/bin/env python3
 """
-Lineup2Playlist - Kernmodul (Tidal-Quelle)
-==========================================
+Lineup2Playlist - core module (TIDAL source)
+============================================
 
-Generisches Tool: Line-Up und Genre-Prioritaeten kommen aus einer TXT-Datei.
-Funktioniert fuer jedes Festival, nicht nur Ruhrpott Rodeo.
+Generic tool: the line-up and genre priorities come from a text file.
+Works for any festival.
 
-TXT-Format (siehe example_lineup.txt):
+Text format (see example_lineup.txt):
     ### Genres
     Punk, Rock, Alternative, Hip-Hop
     ### Line-Up
-    Die Toten Hosen
-    The Baboon Show
+    Bad Religion
+    The Offspring
     ...
-  - Genres: kommagetrennt, ABSTEIGEND priorisiert (erstes = hoechste Prioritaet).
-  - Line-Up: eine Band pro Zeile. Duplikate werden automatisch entfernt.
-  - Leere Zeilen und Kommentarzeilen ('#' + Leerzeichen oder alleinstehendes
-    '#') werden ignoriert. Bandnamen wie '#1 Hit' bleiben dadurch erhalten.
+  - Genres: comma-separated, priority DESCENDING (first = highest priority).
+  - Line-Up: one band per line. Duplicates are removed automatically.
+  - Blank lines and comment lines ('#' + space, or a lone '#') are ignored,
+    so band names like '#1 Hit' are preserved.
 
-Sammel-Modi:
-  Standard   -> Artist.get_top_tracks(limit)   (Tidal-Ranking, recency-biased)
-  --catalog  -> meistgespielte Songs quer ueber ALLE Alben (echte Bandhistorie)
+Collection modes:
+  Default    -> Artist.get_top_tracks(limit)   (TIDAL ranking, recency-biased)
+  --catalog  -> most-played songs across ALL albums (a deeper best-of)
 
-Mehrdeutige Bandnamen:
-  Liefert die Suche nur einen klaren Treffer -> direkt genommen.
-  Gibt es mehrere Kandidaten, gewinnt ein exakter Namens-Match.
-  Danach wuerde die Genre-Prioritaetsliste entscheiden - die Tidal-API
-  (tidalapi 0.8.x) liefert allerdings keine Genre-Daten an Artist/Album.
-  In dem Fall wird der Tidal-Top-Hit genommen und die Band zur Kontrolle
-  in der Aufgabenliste vermerkt ("bitte pruefen").
+Ambiguous band names:
+  A search with a single clear hit is taken directly.
+  With several candidates, an exact name match wins.
+  After that the genre priority list would decide - but the TIDAL API
+  (tidalapi 0.8.x) exposes no genre data on artists/albums. In that case the
+  TIDAL top hit is used and the band is flagged for review in the task list.
 
-Ziel-Backend:
-  --target tidal  -> legt direkt eine Tidal-Playlist an
-  --target plex   -> matcht die Tracks gegen deine Plex-Bibliothek
+Target backend:
+  --target tidal  -> creates a TIDAL playlist directly
+  --target plex   -> matches the tracks against your Plex library
 
-Abhaengigkeiten:
+Dependencies:
   pip install "tidalapi>=0.8" plexapi
 """
 
@@ -48,78 +47,78 @@ from datetime import datetime
 import tidalapi
 
 # ---------------------------------------------------------------------------
-# KONFIGURATION
+# CONFIGURATION
 # ---------------------------------------------------------------------------
 
 TOP_N = 10
 
-# Am Skriptverzeichnis verankert, damit Session-Cache und Aufgabenliste
-# unabhaengig vom Arbeitsverzeichnis immer dieselben Dateien sind.
+# Anchored to the script directory so the session cache and task list are
+# always the same files, independent of the current working directory.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TASK_FILE = os.path.join(BASE_DIR, "manuelle_aufgaben.txt")
+TASK_FILE = os.path.join(BASE_DIR, "manual_tasks.txt")
 SESSION_FILE = os.path.join(BASE_DIR, "tidal_session.json")
 
 PLEX_BASEURL = "http://192.168.x.x:32400"
-PLEX_TOKEN = "DEIN_PLEX_TOKEN"
-PLEX_LIBRARY = "Musik"
+PLEX_TOKEN = "YOUR_PLEX_TOKEN"
+PLEX_LIBRARY = "Music"
 
 
-def _plex_ist_platzhalter():
-    return "DEIN_PLEX_TOKEN" in PLEX_TOKEN or "192.168.x.x" in PLEX_BASEURL
+def _plex_is_placeholder():
+    return "YOUR_PLEX_TOKEN" in PLEX_TOKEN or "192.168.x.x" in PLEX_BASEURL
 
 
 # ---------------------------------------------------------------------------
-# TXT-PARSER
+# TEXT PARSER
 # ---------------------------------------------------------------------------
 
-def _ist_kommentar(line):
-    """Kommentar = '#' + Leerzeichen oder alleinstehendes '#'.
-    So bleiben Bandnamen wie '#1 Hit' erhalten."""
+def _is_comment(line):
+    """A comment is '#' + space, or a lone '#'.
+    This keeps band names like '#1 Hit'."""
     return line == "#" or line.startswith("# ")
 
 
 def parse_lineup(path, verbose=True):
     """
-    Liest lineup.txt und gibt (genres, bands) zurueck.
-    genres: Liste lowercase, in Prioritaetsreihenfolge (absteigend).
-    bands:  Liste der Bandnamen (Original-Schreibweise), dedupliziert.
+    Read the line-up file and return (genres, bands).
+    genres: lowercase list, in priority order (descending).
+    bands:  list of band names (original spelling), deduplicated.
     """
     if not os.path.exists(path):
-        sys.exit(f"Line-Up-Datei nicht gefunden: {path}")
+        sys.exit(f"Line-up file not found: {path}")
 
     genres, bands = [], []
     seen_bands = set()
-    duplikate = 0
-    streuner = 0
-    unbekannte = {}          # unbekannter '###'-Header -> ignorierte Zeilen
+    duplicates = 0
+    strays = 0
+    unknown = {}             # unknown '###' header -> ignored line count
     section = None
-    unbekannt_header = None
+    unknown_header = None
 
     try:
-        # utf-8-sig: BOM am Dateianfang wuerde sonst den ersten Header verstecken
+        # utf-8-sig: a BOM at the start would otherwise hide the first header
         f = open(path, encoding="utf-8-sig", errors="replace")
     except OSError as e:
-        sys.exit(f"Line-Up-Datei nicht lesbar: {path} ({e})")
+        sys.exit(f"Line-up file not readable: {path} ({e})")
     with f:
         for raw in f:
             line = raw.strip()
             if not line:
                 continue
 
-            # Sektions-Header erkennen
+            # detect section headers
             if line.startswith("###"):
                 header = line.lstrip("#").strip().lower()
-                unbekannt_header = None
+                unknown_header = None
                 if header.startswith("genre"):
                     section = "genres"
                 elif header.startswith("line") or header.startswith("band"):
                     section = "bands"
                 else:
                     section = None
-                    unbekannt_header = line
+                    unknown_header = line
                 continue
 
-            if _ist_kommentar(line):
+            if _is_comment(line):
                 continue
 
             if section == "genres":
@@ -130,31 +129,31 @@ def parse_lineup(path, verbose=True):
             elif section == "bands":
                 key = line.lower()
                 if key in seen_bands:
-                    duplikate += 1
+                    duplicates += 1
                     continue
                 seen_bands.add(key)
                 bands.append(line)
-            elif unbekannt_header:
-                unbekannte[unbekannt_header] = unbekannte.get(unbekannt_header, 0) + 1
+            elif unknown_header:
+                unknown[unknown_header] = unknown.get(unknown_header, 0) + 1
             else:
-                streuner += 1
+                strays += 1
 
     if not bands:
-        sys.exit("Keine Bands im Line-Up gefunden. Steht unter '### Line-Up' etwas?")
+        sys.exit("No bands found in the line-up. Is there anything under '### Line-Up'?")
     if verbose:
-        if streuner:
-            print(f"  ! {streuner} Zeile(n) vor dem ersten '###'-Header ignoriert.")
-        for kopf, n in unbekannte.items():
-            print(f"  ! {n} Zeile(n) unter unbekanntem Header '{kopf}' ignoriert.")
-        if duplikate:
-            print(f"  ! {duplikate} doppelte Bandzeile(n) entfernt.")
-        print(f"Line-Up geladen: {len(bands)} Bands, {len(genres)} Genres "
-              f"(Prioritaet: {', '.join(genres) if genres else '-'})\n")
+        if strays:
+            print(f"  ! Ignored {strays} line(s) before the first '###' header.")
+        for head, n in unknown.items():
+            print(f"  ! Ignored {n} line(s) under unknown header '{head}'.")
+        if duplicates:
+            print(f"  ! Removed {duplicates} duplicate band line(s).")
+        print(f"Line-up loaded: {len(bands)} bands, {len(genres)} genres "
+              f"(priority: {', '.join(genres) if genres else '-'})\n")
     return genres, bands
 
 
 # ---------------------------------------------------------------------------
-# MANUELLE AUFGABENLISTE
+# MANUAL TASK LIST
 # ---------------------------------------------------------------------------
 
 class TaskLog:
@@ -166,58 +165,58 @@ class TaskLog:
         self.errors = []
         self.not_matched = []
 
-    def _alle(self):
+    def _all(self):
         return (self.not_found_artist + self.genre_reject + self.uncertain
                 + self.no_tracks + self.errors + self.not_matched)
 
     def count(self):
-        return len(self._alle())
+        return len(self._all())
 
     def has_tasks(self):
-        return bool(self._alle())
+        return bool(self._all())
 
     def write(self, path):
-        lines = ["# Festival Playlist - Manuelle Aufgaben",
-                 "# Vom Script NICHT automatisch erledigt. Bitte von Hand pruefen.",
+        lines = ["# Lineup2Playlist - manual tasks",
+                 "# NOT handled automatically by the script. Please check by hand.",
                  ""]
         if self.not_found_artist:
-            lines.append("## Bands bei Tidal NICHT gefunden (Name/Schreibweise pruefen):")
+            lines.append("## Bands NOT found on TIDAL (check name/spelling):")
             lines += [f"  - {b}" for b in self.not_found_artist]
             lines.append("")
         if self.genre_reject:
-            lines.append("## Mehrdeutig - kein Kandidat mit passendem Genre:")
+            lines.append("## Ambiguous - no candidate with a matching genre:")
             lines += [f"  - {b}" for b in self.genre_reject]
             lines.append("")
         if self.uncertain:
-            lines.append("## Mehrdeutig - automatisch per Top-Hit gewaehlt (bitte pruefen):")
+            lines.append("## Ambiguous - auto-picked by top hit (please check):")
             lines += [f"  - {b}" for b in self.uncertain]
             lines.append("")
         if self.no_tracks:
-            lines.append("## Bands ohne Tracks (evtl. nicht bei Tidal verfuegbar):")
+            lines.append("## Bands without tracks (maybe not available on TIDAL):")
             lines += [f"  - {b}" for b in self.no_tracks]
             lines.append("")
         if self.errors:
-            lines.append("## API-Fehler bei der Abfrage (spaeter erneut versuchen):")
+            lines.append("## API errors during lookup (try again later):")
             lines += [f"  - {b}" for b in self.errors]
             lines.append("")
         if self.not_matched:
-            lines.append("## Songs nicht in Plex-Bibliothek gefunden (manuell ergaenzen):")
+            lines.append("## Songs not found in the Plex library (add manually):")
             lines += [f"  - {s}" for s in self.not_matched]
             lines.append("")
         if not self.has_tasks():
-            lines.append("Alles automatisch erledigt - keine offenen Aufgaben.")
+            lines.append("All done automatically - no open tasks.")
 
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
-        print(f"\nAufgabenliste geschrieben: {path}")
+        print(f"\nTask list written: {path}")
 
 
 # ---------------------------------------------------------------------------
-# TIDAL-LOGIN (mit Session-Cache)
+# TIDAL LOGIN (with session cache)
 # ---------------------------------------------------------------------------
 
-def _expiry_laden(value):
-    """Gecachten expiry_time-String zurueck in datetime wandeln (oder None)."""
+def _expiry_load(value):
+    """Turn a cached expiry_time string back into a datetime (or None)."""
     if isinstance(value, str):
         try:
             return datetime.fromisoformat(value)
@@ -226,28 +225,28 @@ def _expiry_laden(value):
     return value
 
 
-def _expiry_speichern(value):
+def _expiry_store(value):
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value) if value is not None else None
 
 
-def _session_cachen(session, still=False):
+def _cache_session(session, quiet=False):
     try:
-        # 0600: Datei enthaelt Access-/Refresh-Token im Klartext
+        # 0600: the file holds access/refresh tokens in clear text
         fd = os.open(SESSION_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump({
                 "token_type": session.token_type,
                 "access_token": session.access_token,
                 "refresh_token": session.refresh_token,
-                "expiry_time": _expiry_speichern(session.expiry_time),
+                "expiry_time": _expiry_store(session.expiry_time),
             }, f)
         os.chmod(SESSION_FILE, 0o600)
-        if not still:
-            print(f"Tidal-Session gecacht: {SESSION_FILE}")
+        if not quiet:
+            print(f"TIDAL session cached: {SESSION_FILE}")
     except Exception as e:
-        print(f"  ! Session konnte nicht gecacht werden: {e}", file=sys.stderr)
+        print(f"  ! Could not cache session: {e}", file=sys.stderr)
 
 
 def tidal_login():
@@ -258,15 +257,15 @@ def tidal_login():
                 d = json.load(f)
             ok = session.load_oauth_session(
                 d["token_type"], d["access_token"],
-                d.get("refresh_token"), _expiry_laden(d.get("expiry_time")),
+                d.get("refresh_token"), _expiry_load(d.get("expiry_time")),
             )
             if ok and session.check_login():
-                print("Tidal-Session aus Cache geladen.")
-                # tidalapi refresht abgelaufene Tokens beim Laden automatisch
-                # -> erneuerten Token-Satz zurueckschreiben, sonst macht
-                # jeder weitere Lauf denselben Refresh-Roundtrip erneut
+                print("TIDAL session loaded from cache.")
+                # tidalapi refreshes expired tokens automatically on load
+                # -> write the renewed token set back, otherwise every further
+                # run repeats the same refresh round-trip
                 if session.access_token != d.get("access_token"):
-                    _session_cachen(session, still=True)
+                    _cache_session(session, quiet=True)
                 return session
         except Exception:
             pass
@@ -274,26 +273,26 @@ def tidal_login():
     try:
         session.login_oauth_simple()
     except TimeoutError:
-        sys.exit("Tidal-Login abgelaufen: Der Link wurde nicht rechtzeitig "
-                 "bestaetigt. Bitte erneut starten.")
+        sys.exit("TIDAL login timed out: the link was not confirmed in time. "
+                 "Please start again.")
     if not session.check_login():
-        sys.exit("Tidal-Login fehlgeschlagen.")
+        sys.exit("TIDAL login failed.")
 
-    _session_cachen(session)
+    _cache_session(session)
     return session
 
 
 # ---------------------------------------------------------------------------
-# GENRE-ERMITTLUNG
+# GENRE DETECTION
 # ---------------------------------------------------------------------------
 
 def artist_genre_tags(artist):
     """
-    Sammelt Genre-Hinweise vom Artist-Objekt (lowercase-Menge).
+    Collect genre hints from the artist object (lowercase set).
 
-    Hinweis: tidalapi 0.8.x setzt an Artist/Album KEINE Genre-Attribute,
-    die Menge ist dort also immer leer. Die Attribut-Pruefung bleibt fuer
-    kuenftige Bibliotheksversionen erhalten (kostet keine API-Calls).
+    Note: tidalapi 0.8.x sets NO genre attributes on artists/albums, so this
+    set is always empty there. The attribute check is kept for future library
+    versions (it costs no API calls).
     """
     tags = set()
     for attr in ("genre", "genres"):
@@ -307,9 +306,9 @@ def artist_genre_tags(artist):
 
 def genre_priority(artist, priority_list):
     """
-    Gibt (index, tags) zurueck: index (0 = hoechste Prio) des besten
-    passenden Genres oder None, wenn kein Listen-Genre passt; tags ist
-    die Menge der gefundenen Genre-Hinweise.
+    Return (index, tags): index (0 = highest priority) of the best matching
+    genre, or None if no listed genre matches; tags is the set of genre hints
+    found.
     """
     tags = artist_genre_tags(artist)
     best = None
@@ -322,41 +321,40 @@ def genre_priority(artist, priority_list):
 
 
 # ---------------------------------------------------------------------------
-# ARTIST FINDEN (Genre nur bei Mehrdeutigkeit)
+# FIND ARTIST (genre only when ambiguous)
 # ---------------------------------------------------------------------------
 
-# Ab wie vielen ernsthaften Treffern gilt eine Suche als "mehrdeutig".
+# From how many serious hits a search counts as "ambiguous".
 AMBIGUOUS_THRESHOLD = 2
 
 def find_artist(session, name, priority_list):
     """
-    Rueckgabe: (artist|None, reason) mit reason in
+    Return: (artist|None, reason) with reason in
     {"ok", "fallback", "not_found", "genre_reject"}.
-    - Nur ein Treffer / eindeutiger exakter Namens-Match -> direkt ("ok").
-    - Mehrere Kandidaten -> Genre-Prioritaet entscheidet, sofern die API
-      Genre-Daten liefert. Liefert sie keine (tidalapi 0.8.x) oder gibt es
-      keine Prioritaetsliste, wird der Tidal-Top-Hit (falls unter den
-      Kandidaten) bzw. der erste Kandidat genommen und als "fallback"
-      markiert -> landet zur Kontrolle in der Aufgabenliste.
+    - Single hit / unique exact name match -> taken directly ("ok").
+    - Several candidates -> genre priority decides, if the API provides genre
+      data. If it does not (tidalapi 0.8.x) or there is no priority list, the
+      TIDAL top hit (if among the candidates) or the first candidate is taken
+      and marked "fallback" -> flagged for review in the task list.
     """
     res = session.search(name, models=[tidalapi.artist.Artist], limit=5)
     artists = res.get("artists") or []
     if not artists:
         return None, "not_found"
 
-    # Eindeutig: nur ein Treffer -> direkt nehmen
+    # Unambiguous: single hit -> take it directly
     if len(artists) < AMBIGUOUS_THRESHOLD:
         return artists[0], "ok"
 
-    # Exakter Namens-Match unter den Kandidaten? Dann ist es nicht wirklich
-    # mehrdeutig - der exakte Treffer gewinnt (haeufigster Normalfall).
+    # An exact name match among the candidates? Then it isn't really ambiguous
+    # - the exact hit wins (the most common normal case).
     exact = [a for a in artists if (a.name or "").strip().lower() == name.strip().lower()]
     if len(exact) == 1:
         return exact[0], "ok"
 
     candidates = list(exact) if exact else list(artists)
 
-    # Genre-Prioritaet anwenden, sofern die API ueberhaupt Genres liefert
+    # Apply genre priority, if the API provides genres at all
     if priority_list:
         tagged = [(cand, genre_priority(cand, priority_list)) for cand in candidates]
         if any(tags for _, (_, tags) in tagged):
@@ -365,14 +363,14 @@ def find_artist(session, name, priority_list):
                 if idx is not None and (best_idx is None or idx < best_idx):
                     best_artist, best_idx = cand, idx
             if best_artist is not None:
-                print(f"     [Genre-Disambig] '{name}' -> {best_artist.name} "
-                      f"(Prio-Genre: {priority_list[best_idx]})")
+                print(f"     [genre disambig] '{name}' -> {best_artist.name} "
+                      f"(priority genre: {priority_list[best_idx]})")
                 return best_artist, "ok"
             return None, "genre_reject"
 
-    # Keine Genre-Daten verfuegbar oder keine Prioritaetsliste
-    # -> Tidal-Top-Hit, aber nur wenn er unter den Kandidaten ist
-    # (candidates ist ggf. schon auf exakte Namens-Treffer eingegrenzt)
+    # No genre data available or no priority list
+    # -> TIDAL top hit, but only if it's among the candidates
+    # (candidates may already be narrowed to exact name matches)
     top = res.get("top_hit")
     chosen = candidates[0]
     if isinstance(top, tidalapi.artist.Artist):
@@ -380,13 +378,13 @@ def find_artist(session, name, priority_list):
             if getattr(cand, "id", None) == getattr(top, "id", None):
                 chosen = cand
                 break
-    print(f"     [Top-Hit-Fallback] '{name}' -> {chosen.name} (mehrdeutig, "
-          f"bitte pruefen)")
+    print(f"     [top-hit fallback] '{name}' -> {chosen.name} (ambiguous, "
+          f"please check)")
     return chosen, "fallback"
 
 
 # ---------------------------------------------------------------------------
-# SAMMEL-MODI
+# COLLECTION MODES
 # ---------------------------------------------------------------------------
 
 def tracks_top(artist, limit):
@@ -398,8 +396,8 @@ def tracks_catalog(artist, limit):
         albums = artist.get_albums()
     except Exception:
         albums = []
-    # get_ep_singles ist die aktuelle Methode, get_albums_ep_singles der
-    # deprecatete Fallback fuer aeltere tidalapi-Versionen.
+    # get_ep_singles is the current method, get_albums_ep_singles the
+    # deprecated fallback for older tidalapi versions.
     for getter in ("get_ep_singles", "get_albums_ep_singles"):
         fn = getattr(artist, getter, None)
         if callable(fn):
@@ -433,24 +431,24 @@ def tracks_catalog(artist, limit):
 def collect(session, bands, priority_list, limit, catalog, tasks, pause=0.2):
     collected = []
     seen_track_ids = set()
-    mode = "Katalog" if catalog else "Top-Tracks"
-    print(f"Sammel-Modus: {mode}, {limit} Songs je Band\n")
+    mode = "Catalog" if catalog else "Top tracks"
+    print(f"Collection mode: {mode}, {limit} songs per band\n")
 
     for band in bands:
         try:
             artist, reason = find_artist(session, band, priority_list)
         except Exception as e:
-            print(f"-> {band}: API-Fehler bei der Suche ({e})")
-            tasks.errors.append(f"{band} (Suche: {e})")
+            print(f"-> {band}: API error during search ({e})")
+            tasks.errors.append(f"{band} (search: {e})")
             time.sleep(pause)
             continue
 
         if artist is None:
             if reason == "genre_reject":
-                print(f"-> {band}: mehrdeutig, kein Genre-Match -> manuelle Aufgabe")
+                print(f"-> {band}: ambiguous, no genre match -> manual task")
                 tasks.genre_reject.append(band)
             else:
-                print(f"-> {band}: NICHT gefunden")
+                print(f"-> {band}: NOT found")
                 tasks.not_found_artist.append(band)
             time.sleep(pause)
             continue
@@ -461,13 +459,13 @@ def collect(session, bands, priority_list, limit, catalog, tasks, pause=0.2):
         try:
             tracks = tracks_catalog(artist, limit) if catalog else tracks_top(artist, limit)
         except Exception as e:
-            print(f"-> {band}: Fehler beim Laden der Tracks ({e})")
-            tasks.errors.append(f"{band} (Tracks: {e})")
+            print(f"-> {band}: error loading tracks ({e})")
+            tasks.errors.append(f"{band} (tracks: {e})")
             time.sleep(pause)
             continue
 
         if not tracks:
-            print(f"-> {band}: keine Tracks")
+            print(f"-> {band}: no tracks")
             tasks.no_tracks.append(band)
             time.sleep(pause)
             continue
@@ -476,7 +474,7 @@ def collect(session, bands, priority_list, limit, catalog, tasks, pause=0.2):
         for t in tracks:
             tid = getattr(t, "id", None)
             if tid is not None and tid in seen_track_ids:
-                print(f"     {t.name}  (Duplikat, uebersprungen)")
+                print(f"     {t.name}  (duplicate, skipped)")
                 continue
             if tid is not None:
                 seen_track_ids.add(tid)
@@ -486,26 +484,26 @@ def collect(session, bands, priority_list, limit, catalog, tasks, pause=0.2):
             collected.append((band, t))
         time.sleep(pause)
 
-    print(f"\nGesamt: {len(collected)} Tracks gesammelt.\n")
+    print(f"\nTotal: {len(collected)} tracks collected.\n")
     return collected
 
 
 # ---------------------------------------------------------------------------
-# ZIELE
+# TARGETS
 # ---------------------------------------------------------------------------
 
 def _http_status(exc):
-    """HTTP-Statuscode aus einer requests-Exception ziehen (oder None)."""
+    """Pull the HTTP status code from a requests exception (or None)."""
     return getattr(getattr(exc, "response", None), "status_code", None)
 
 
-def _ist_rate_limit(exc):
-    """429 erkennen - auch tidalapis TooManyRequests (hat kein .response)."""
+def _is_rate_limit(exc):
+    """Detect 429 - including tidalapi's TooManyRequests (has no .response)."""
     return _http_status(exc) == 429 or type(exc).__name__ == "TooManyRequests"
 
 
 def _existing_playlist(session, name):
-    """Bestehende UserPlaylist mit exakt diesem Namen finden (oder None)."""
+    """Find an existing UserPlaylist with exactly this name (or None)."""
     try:
         for p in session.user.playlists():
             if (getattr(p, "name", "") or "").strip() == name.strip():
@@ -516,7 +514,7 @@ def _existing_playlist(session, name):
 
 
 def _playlist_track_ids(playlist):
-    """Alle Track-IDs einer Playlist paginiert auslesen (Tidal begrenzt ~100)."""
+    """Read all track IDs of a playlist, paginated (TIDAL caps at ~100)."""
     ids = set()
     offset, PAGE = 0, 100
     while True:
@@ -536,11 +534,11 @@ def _playlist_track_ids(playlist):
 
 def _add_batch_with_retry(session, playlist, ids, retries=3, pause=1.0):
     """
-    Einen Block hinzufuegen, mit Retry bei zwei bekannten Transient-Fehlern:
-      - 412 (veralteter ETag): Playlist-Objekt frisch laden, dann erneut.
-      - 429 / TooManyRequests (Rate-Limit): mit Backoff erneut versuchen.
-    Andere Fehler werden sofort weitergereicht. Rueckgabe: (playlist, erfolg);
-    playlist kann durch ein frisch geladenes Objekt ersetzt worden sein.
+    Add one block, with retries for two known transient errors:
+      - 412 (stale ETag): reload the playlist object, then retry.
+      - 429 / TooManyRequests (rate limit): retry with backoff.
+    Other errors are re-raised immediately. Returns (playlist, success);
+    playlist may have been replaced by a freshly loaded object.
     """
     last_exc = None
     for attempt in range(retries):
@@ -549,70 +547,69 @@ def _add_batch_with_retry(session, playlist, ids, retries=3, pause=1.0):
             return playlist, True
         except Exception as e:
             last_exc = e
-            if not (_http_status(e) == 412 or _ist_rate_limit(e)):
-                raise  # nicht behebbar -> nach oben
+            if not (_http_status(e) == 412 or _is_rate_limit(e)):
+                raise  # not recoverable -> bubble up
             if attempt < retries - 1:
                 if _http_status(e) == 412:
                     try:
-                        playlist = session.playlist(playlist.id)  # frischer ETag
+                        playlist = session.playlist(playlist.id)  # fresh ETag
                     except Exception:
                         try:
                             playlist._reparse()
                         except Exception:
                             pass
-                time.sleep(pause * (attempt + 1))  # Backoff (v.a. fuer 429)
+                time.sleep(pause * (attempt + 1))  # backoff (esp. for 429)
     if last_exc is not None:
-        print(f"  ! Block nach {retries} Versuchen aufgegeben: {last_exc}",
+        print(f"  ! Gave up on block after {retries} attempts: {last_exc}",
               file=sys.stderr)
     return playlist, False
 
 
 def build_tidal_playlist(session, collected, name, catalog):
     if not collected:
-        print("Keine Tracks gesammelt - keine Tidal-Playlist angelegt.")
+        print("No tracks collected - no TIDAL playlist created.")
         return
-    desc = ("Meistgespielte Songs quer ueber alle Alben" if catalog
-            else "Populaerste Songs (Tidal-Ranking)")
+    desc = ("Most-played songs across all albums" if catalog
+            else "Most popular songs (TIDAL ranking)")
 
-    # In Sammelreihenfolge dedupliziert (Tidal ueberspringt Dubletten still)
+    # Deduplicated in collection order (TIDAL silently skips dupes)
     track_ids = list(dict.fromkeys(t.id for _, t in collected))
 
-    # Bestehende Playlist gleichen Namens wiederverwenden -> Wiederaufnahme
-    # nach einem Abbruch, OHNE bereits vorhandene Tracks doppelt einzuspeisen.
+    # Reuse an existing playlist of the same name -> resume after an abort,
+    # WITHOUT adding already-present tracks a second time.
     playlist = _existing_playlist(session, name)
     if playlist is not None:
-        vorhanden = _playlist_track_ids(playlist)
-        fehlend = [tid for tid in track_ids if tid not in vorhanden]
-        print(f"Bestehende Playlist '{name}' gefunden ({len(vorhanden)} Tracks)"
-              f" - ergaenze {len(fehlend)} fehlende.")
+        present = _playlist_track_ids(playlist)
+        missing = [tid for tid in track_ids if tid not in present]
+        print(f"Found existing playlist '{name}' ({len(present)} tracks)"
+              f" - adding {len(missing)} missing.")
     else:
         playlist = session.user.create_playlist(name, desc)
-        vorhanden = set()
-        fehlend = track_ids
+        present = set()
+        missing = track_ids
 
-    if not fehlend:
-        print(f"Playlist '{name}' ist bereits vollstaendig ({len(vorhanden)} Tracks).")
+    if not missing:
+        print(f"Playlist '{name}' is already complete ({len(present)} tracks).")
         return
 
     BATCH = 50
-    hinzugefuegt = 0
-    for i in range(0, len(fehlend), BATCH):
-        block = fehlend[i:i + BATCH]
+    added = 0
+    for i in range(0, len(missing), BATCH):
+        block = missing[i:i + BATCH]
         try:
             playlist, ok = _add_batch_with_retry(session, playlist, block)
         except Exception as e:
-            print(f"  ! Fehler beim Hinzufuegen ab Track {i + 1}: {e}",
-                  file=sys.stderr)
+            print(f"  ! Error adding from track {i + 1}: {e}", file=sys.stderr)
             ok = False
         if not ok:
-            print(f"  ! Block ab Track {i + 1} nicht hinzugefuegt. Ein erneuter "
-                  f"Programmlauf ergaenzt die restlichen Tracks (ohne Duplikate).")
+            print(f"  ! Block from track {i + 1} not added. Another run will "
+                  f"add the remaining tracks (without duplicates).")
             break
-        hinzugefuegt += len(block)
-        time.sleep(0.3)  # kurze Pause -> ETag-Konflikt gar nicht erst provozieren
+        added += len(block)
+        time.sleep(0.3)  # short pause -> avoid provoking an ETag conflict
 
-    print(f"Tidal-Playlist '{name}': {hinzugefuegt} neu hinzugefuegt, "
-          f"insgesamt {len(vorhanden) + hinzugefuegt} Tracks.")
+    print(f"TIDAL playlist '{name}': {added} newly added, "
+          f"{len(present) + added} tracks in total.")
 
 
 def build_plex_playlist(collected, name, tasks):
@@ -621,11 +618,11 @@ def build_plex_playlist(collected, name, tasks):
     plex = PlexServer(PLEX_BASEURL, PLEX_TOKEN)
     music = plex.library.section(PLEX_LIBRARY)
 
-    def _beste_treffer(hits, title):
-        """Exakten Titel-Treffer bevorzugen (searchTracks matcht Substrings)."""
-        exakt = [h for h in hits
+    def _best_hit(hits, title):
+        """Prefer an exact title match (searchTracks matches substrings)."""
+        exact = [h for h in hits
                  if (h.title or "").strip().lower() == title.strip().lower()]
-        return exakt[0] if exakt else hits[0]
+        return exact[0] if exact else hits[0]
 
     matched = []
     for band, t in collected:
@@ -633,23 +630,23 @@ def build_plex_playlist(collected, name, tasks):
         title = t.name
         hits = music.searchTracks(title=title, filters={"artist.title": artist_name})
         if not hits:
-            # Fallback: auch Track-Artist (originalTitle) pruefen, damit
-            # Compilation-Tracks gefunden werden (dort ist der Album-Artist
-            # z.B. 'Various Artists').
+            # Fallback: also check the track artist (originalTitle) so
+            # compilation tracks are found (there the album artist is
+            # e.g. 'Various Artists').
             wanted = artist_name.lower()
             hits = [h for h in music.searchTracks(title=title)
                     if wanted in (h.grandparentTitle or "").lower()
                     or wanted in (getattr(h, "originalTitle", "") or "").lower()]
         if hits:
-            matched.append(_beste_treffer(hits, title))
+            matched.append(_best_hit(hits, title))
         else:
             tasks.not_matched.append(f"{artist_name} - {title}")
 
     if matched:
         plex.createPlaylist(name, items=matched)
-        print(f"Plex-Playlist '{name}' angelegt: {len(matched)} Tracks.")
+        print(f"Plex playlist '{name}' created: {len(matched)} tracks.")
     else:
-        print("Keine Tracks in der Plex-Bibliothek gefunden - keine Playlist angelegt.")
+        print("No tracks found in the Plex library - no playlist created.")
 
 
 # ---------------------------------------------------------------------------
@@ -657,29 +654,29 @@ def build_plex_playlist(collected, name, tasks):
 # ---------------------------------------------------------------------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Lineup2Playlist (Tidal/Plex)")
+    ap = argparse.ArgumentParser(description="Lineup2Playlist (TIDAL/Plex)")
     ap.add_argument("--target", choices=["tidal", "plex"], required=True)
     ap.add_argument("--lineup", required=True,
-                    help="Pfad zur Line-Up-TXT (Pflicht, z.B. example_lineup.txt)")
+                    help="path to the line-up .txt (required, e.g. example_lineup.txt)")
     ap.add_argument("--top", type=int, default=TOP_N,
-                    help=f"Songs je Band (Default {TOP_N})")
+                    help=f"songs per band (default {TOP_N})")
     ap.add_argument("--catalog", action="store_true",
-                    help="meistgespielte Songs quer ueber ALLE Alben statt nur Top-Ranking")
+                    help="most-played songs across ALL albums instead of the top ranking")
     ap.add_argument("--name", default="Festival - Best Of")
     ap.add_argument("--dry-run", action="store_true",
-                    help="nur sammeln + Aufgabenliste, keine Playlist anlegen")
+                    help="only collect + write the task list, don't create a playlist")
     args = ap.parse_args()
 
-    # Plex-Vorabpruefung VOR der (langen) Sammelphase, nicht danach
+    # Plex pre-check BEFORE the (long) collection phase, not after
     if args.target == "plex" and not args.dry_run:
         try:
             import plexapi  # noqa: F401
         except ImportError:
-            sys.exit("Das Paket 'plexapi' ist nicht installiert: pip install plexapi")
-        if _plex_ist_platzhalter():
-            sys.exit("PLEX_BASEURL/PLEX_TOKEN sind noch Platzhalter - bitte oben "
-                     "im Skript eintragen (oder die interaktive CLI "
-                     "festival_cli.py nutzen).")
+            sys.exit("The 'plexapi' package is not installed: pip install plexapi")
+        if _plex_is_placeholder():
+            sys.exit("PLEX_BASEURL/PLEX_TOKEN are still placeholders - set them at "
+                     "the top of the script (or use the interactive CLI "
+                     "festival_cli.py).")
 
     priority_list, bands = parse_lineup(args.lineup)
 
@@ -690,7 +687,7 @@ def main():
 
     build_error = None
     if args.dry_run:
-        print("Dry-Run: keine Playlist angelegt.")
+        print("Dry run: no playlist created.")
     else:
         try:
             if args.target == "tidal":
@@ -699,13 +696,13 @@ def main():
                 build_plex_playlist(collected, args.name, tasks)
         except Exception as e:
             build_error = e
-            print(f"FEHLER beim Anlegen der Playlist: {type(e).__name__}: {e}",
+            print(f"ERROR creating the playlist: {type(e).__name__}: {e}",
                   file=sys.stderr)
 
-    # Aufgabenliste IMMER schreiben, auch wenn der Playlist-Bau scheitert
+    # Always write the task list, even if building the playlist fails
     tasks.write(TASK_FILE)
     if tasks.has_tasks():
-        print("Es gibt offene manuelle Aufgaben - siehe Datei oben.")
+        print("There are open manual tasks - see the file above.")
 
     if build_error is not None:
         sys.exit(1)

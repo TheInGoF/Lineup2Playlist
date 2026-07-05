@@ -38,7 +38,7 @@ class TestRunLog:
         # nach finish gibt es ein done-Event
         events, active = log.snapshot_from(1, timeout=0.1)
         assert active is False
-        assert events[-1] == {"type": "done", "text": "fertig"}
+        assert events[-1] == {"type": "done", "text": "done"}
 
     def test_start_leert_alte_events(self):
         log = w.RunLog()
@@ -131,7 +131,7 @@ class TestEndpoints:
     def test_run_ohne_lineup_gibt_400(self, server):
         status, data = _post(server, "/api/run", {"lineup": None})
         assert status == 400
-        assert "Line-Up" in data["error"]
+        assert "line-up" in data["error"]
 
     def test_plex_ohne_creds_gibt_400(self, server):
         path = os.path.join(os.path.dirname(__file__), "example_lineup.txt")
@@ -166,4 +166,4 @@ class TestEndpoints:
                     if ev["type"] == "done":
                         break
         assert any(e["type"] == "done" for e in events)
-        assert any("Dry-Run" in e["text"] for e in events)
+        assert any("Dry run" in e["text"] for e in events)
