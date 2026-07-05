@@ -17,6 +17,10 @@ venv/
 # AI assistant configs
 .claude/
 
+# Developer notes (kept local, not published)
+to-do.md
+bug-fix.md
+
 # Secrets & personal runtime data (TIDAL OAuth tokens, saved settings, task list)
 tidal_session.json
 festival_cli_config.json

@@ -166,14 +166,13 @@ on an ephemeral port. No network or login required.
 - `requirements.txt` — `tidalapi` + `plexapi`
 - `test_*.py` — offline test suite
 - `images/` — logo
-- `to-do.md`, `bug-fix.md` — open items and a documented, fixed upload bug
 
 ## Known limitations
 
 - TIDAL's genre-based disambiguation is inert on `tidalapi` 0.8.x (no genre data);
   ambiguous names fall back to the top hit and are flagged for review.
-- A few nice-to-haves (line-up file upload in the web UI, a cancel button) are
-  tracked in [`to-do.md`](to-do.md).
+- A few nice-to-haves are still open: line-up file upload in the web UI and a
+  cancel button for a running job.
 
 ## License
 
