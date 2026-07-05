@@ -1,0 +1,2 @@
+tidalapi>=0.8
+plexapi>=4.15

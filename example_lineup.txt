@@ -1,0 +1,24 @@
+# Example line-up (impersonal, ready-to-use template).
+# Copy this file to "<your-festival>.txt" and edit it — your own copies are
+# git-ignored, only this example is tracked.
+#
+# Format:
+#   ### Genres   -> comma-separated, HIGHEST priority first
+#   ### Line-Up  -> one band per line
+# Blank lines and "# " comment lines are ignored.
+# The genre list is only used to disambiguate ambiguous band names.
+
+### Genres
+Punk, Rock, Alternative, Hardcore, Ska, Hip-Hop
+
+### Line-Up
+Dropkick Murphys
+Bad Religion
+NOFX
+Rise Against
+Flogging Molly
+The Offspring
+Pennywise
+Social Distortion
+Anti-Flag
+Millencolin
