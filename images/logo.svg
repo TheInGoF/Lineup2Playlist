@@ -6,14 +6,18 @@
     </linearGradient>
   </defs>
   <rect x="4" y="4" width="112" height="112" rx="26" fill="url(#bg)"/>
-  <!-- line-up: a stacked list on the left -->
-  <g fill="#ffffff" opacity="0.96">
-    <rect x="26" y="38" width="34" height="7" rx="3.5"/>
-    <rect x="26" y="56" width="26" height="7" rx="3.5"/>
-    <rect x="26" y="74" width="30" height="7" rx="3.5"/>
+
+  <!-- equalizer bars: the line-up as sound levels -->
+  <g fill="#ffffff" opacity="0.9">
+    <rect x="24" y="60" width="7" height="22" rx="3.5"/>
+    <rect x="35" y="46" width="7" height="36" rx="3.5"/>
+    <rect x="46" y="66" width="7" height="16" rx="3.5"/>
   </g>
-  <!-- arrow: turns the line-up into a playlist -->
-  <path d="M64 60 h9" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
-  <!-- play triangle -->
-  <path d="M80 42 L98 60 L80 78 Z" fill="#ffffff"/>
+
+  <!-- eighth note: the playlist -->
+  <g fill="#ffffff">
+    <rect x="82" y="34" width="5.5" height="46" rx="2.75"/>
+    <path d="M87.5 34 c14 3 15 16 6 24 c6 -9 2 -17 -6 -18 z"/>
+    <ellipse cx="73.5" cy="82" rx="11.5" ry="8.5" transform="rotate(-24 73.5 82)"/>
+  </g>
 </svg>
